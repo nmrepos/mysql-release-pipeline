@@ -1,7 +1,7 @@
 PY ?= python3
 REPORTS := reports
 
-.PHONY: up down reset check migrate-previous seed bench-baseline migrate bench-release gate
+.PHONY: up down reset check migrate-previous seed bench-baseline migrate bench-release gate concurrency
 
 up:
 	docker compose up -d --wait
@@ -34,3 +34,6 @@ bench-release:
 
 gate:
 	$(PY) scripts/compare.py $(REPORTS)/baseline.json $(REPORTS)/release.json --markdown $(REPORTS)/benchmark.md
+
+concurrency:
+	$(PY) scripts/concurrency_test.py --out $(REPORTS)/concurrency.json
