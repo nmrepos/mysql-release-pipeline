@@ -2,8 +2,8 @@
 """Concurrent INSERT / SELECT / UPDATE load against the released schema.
 
 Each worker thread has its own connection and runs a random mix of:
-  * place_order  (transaction): INSERT order, INSERT payment, UPDATE the customer's
-    lifetime_orders counter. Customers come from a small "hot" set on purpose, so
+  * place_order  (transaction): UPDATE the customer's lifetime_orders counter, INSERT
+    order, INSERT payment (see --lock-order for why the UPDATE comes first). Customers come from a small "hot" set on purpose, so
     threads fight over the same rows and real lock waits / deadlocks happen.
   * read         : customer order history + the monthly revenue report.
   * update_status: UPDATE a random order's status.
@@ -62,6 +62,12 @@ class Stats:
 def place_order(conn, cur, rng, ctx):
     customer_id = rng.choice(ctx["hot_customers"])
     amount = Decimal(rng.randint(500, 50000)) / 100
+    if ctx["lock_order"] == "customer-first":
+        # Take the exclusive lock on the parent row before the INSERTs. Otherwise the
+        # FK check on INSERT takes a shared lock first and the later UPDATE has to
+        # upgrade it, so two threads on the same customer deadlock each other.
+        cur.execute("UPDATE customers SET lifetime_orders = lifetime_orders + 1 WHERE customer_id = %s",
+                    (customer_id,))
     cur.execute(
         "INSERT INTO orders (customer_id, status, order_purchase_timestamp, total_amount, source) "
         "VALUES (%s, 'processing', NOW(), %s, %s)",
@@ -73,8 +79,9 @@ def place_order(conn, cur, rng, ctx):
         "VALUES (%s, 'credit_card', 1, %s)",
         (order_id, amount),
     )
-    cur.execute("UPDATE customers SET lifetime_orders = lifetime_orders + 1 WHERE customer_id = %s",
-                (customer_id,))
+    if ctx["lock_order"] == "naive":
+        cur.execute("UPDATE customers SET lifetime_orders = lifetime_orders + 1 WHERE customer_id = %s",
+                    (customer_id,))
     conn.commit()
     return customer_id
 
@@ -174,6 +181,8 @@ def main():
     parser.add_argument("--ops-per-thread", type=int, default=250)
     parser.add_argument("--hot-customers", type=int, default=10)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--lock-order", choices=["customer-first", "naive"], default="customer-first",
+                        help="naive = INSERT then UPDATE the customer (reproduces the deadlocks)")
     parser.add_argument("--out", default="reports/concurrency.json")
     args = parser.parse_args()
 
@@ -184,6 +193,7 @@ def main():
         "source": "lt-" + uuid.uuid4().hex[:8],
         "hot_customers": list(range(1, args.hot_customers + 1)),
         "max_order_id": cur.fetchone()[0],
+        "lock_order": args.lock_order,
     }
     before_counters = counters(cur, ctx["hot_customers"])
     cur.close()
@@ -201,6 +211,7 @@ def main():
     report = {
         "run_source_tag": ctx["source"],
         "threads": args.threads,
+        "lock_order": args.lock_order,
         "ops_attempted": args.threads * args.ops_per_thread,
         "ops_succeeded": total_ops,
         "by_operation": stats.counts,

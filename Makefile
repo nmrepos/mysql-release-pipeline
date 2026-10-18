@@ -1,7 +1,7 @@
 PY ?= python3
 REPORTS := reports
 
-.PHONY: up down reset check migrate-previous seed bench-baseline migrate bench-release gate concurrency
+.PHONY: up down reset check migrate-previous seed bench-baseline migrate bench-release gate concurrency deadlock-demo
 
 up:
 	docker compose up -d --wait
@@ -37,3 +37,6 @@ gate:
 
 concurrency:
 	$(PY) scripts/concurrency_test.py --out $(REPORTS)/concurrency.json
+
+deadlock-demo:
+	$(PY) scripts/concurrency_test.py --lock-order naive --out $(REPORTS)/concurrency-naive.json
