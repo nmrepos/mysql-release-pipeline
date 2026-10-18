@@ -1,0 +1,120 @@
+name: Database release pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  DB_HOST: 127.0.0.1
+  DB_PORT: "3306"
+  DB_NAME: shop
+  DB_USER: app
+  DB_PASSWORD: ${{ secrets.DB_PASSWORD || 'apppw' }}
+
+jobs:
+  migration-guard:
+    name: Migration guard + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Released migrations must not change
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          BASE=""
+          if [ "$EVENT" = "pull_request" ]; then
+            BASE="origin/$BASE_REF"
+          elif [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            BASE="$BEFORE"
+          fi
+          python scripts/check_migrations.py ${BASE:+--base "$BASE"}
+
+      - name: Unit tests
+        run: python -m pytest -q tests
+
+  release-validation:
+    name: Release validation (MySQL 8.0)
+    needs: migration-guard
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpw
+          MYSQL_DATABASE: shop
+          MYSQL_USER: app
+          MYSQL_PASSWORD: ${{ secrets.DB_PASSWORD || 'apppw' }}
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -prootpw"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Pull Flyway image
+        run: docker pull -q flyway/flyway:10
+
+      - name: Deploy previous release (schema v2)
+        run: make migrate-previous
+
+      - name: Seed ~430k rows
+        run: make seed
+
+      - name: Benchmark before release
+        run: make bench-baseline
+
+      - name: Apply release migrations (Flyway migrate + validate)
+        run: make migrate
+
+      - name: Benchmark after release
+        run: make bench-release
+
+      - name: Performance gate
+        run: make gate
+
+      - name: Concurrent INSERT/SELECT/UPDATE test
+        run: make concurrency
+
+      - name: Environment readiness checks
+        run: make validate
+
+      - name: Job summary
+        if: always()
+        run: |
+          [ -f reports/benchmark.md ] && cat reports/benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f reports/concurrency.json ]; then
+            echo '### Concurrency test' >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat reports/concurrency.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          true
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-reports
+          path: reports/
