@@ -1,7 +1,7 @@
 PY ?= python3
 REPORTS := reports
 
-.PHONY: up down reset migrate-previous seed bench-baseline migrate bench-release
+.PHONY: up down reset check migrate-previous seed bench-baseline migrate bench-release gate
 
 up:
 	docker compose up -d --wait
@@ -10,6 +10,9 @@ down:
 	docker compose down -v
 
 reset: down up
+
+check:
+	$(PY) -m pytest -q tests
 
 # Simulates the schema currently in production (release 2) before this release is applied.
 migrate-previous:
@@ -28,3 +31,6 @@ migrate:
 
 bench-release:
 	$(PY) scripts/benchmark.py --label release --out $(REPORTS)/release.json
+
+gate:
+	$(PY) scripts/compare.py $(REPORTS)/baseline.json $(REPORTS)/release.json --markdown $(REPORTS)/benchmark.md
