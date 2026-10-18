@@ -1,7 +1,7 @@
 PY ?= python3
 REPORTS := reports
 
-.PHONY: up down reset check migrate-previous seed bench-baseline migrate bench-release gate concurrency deadlock-demo
+.PHONY: up down reset check migrate-previous seed bench-baseline migrate bench-release gate concurrency deadlock-demo validate release
 
 up:
 	docker compose up -d --wait
@@ -12,6 +12,7 @@ down:
 reset: down up
 
 check:
+	$(PY) scripts/check_migrations.py
 	$(PY) -m pytest -q tests
 
 # Simulates the schema currently in production (release 2) before this release is applied.
@@ -40,3 +41,8 @@ concurrency:
 
 deadlock-demo:
 	$(PY) scripts/concurrency_test.py --lock-order naive --out $(REPORTS)/concurrency-naive.json
+
+validate:
+	$(PY) scripts/validate.py
+
+release: check migrate-previous seed bench-baseline migrate bench-release gate concurrency validate
