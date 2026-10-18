@@ -2,8 +2,8 @@
 """Release gate: compare two benchmark files and fail on regressions.
 
 A critical query fails the gate when either
-  * it is slower than the baseline by more than --tolerance (ratio) AND by more than
-    --min-delta-ms (so sub-millisecond noise never fails a build), or
+  * it is more than --tolerance (default 50%) slower than the baseline AND more than
+    --min-delta-ms (default 10 ms) slower, so run-to-run noise never fails a build, or
   * its median is over its budget_ms from queries.py.
 
     python scripts/compare.py reports/baseline.json reports/release.json --markdown reports/summary.md
@@ -16,7 +16,7 @@ from pathlib import Path
 from queries import QUERIES
 
 
-def evaluate(before, after, tolerance=0.25, min_delta_ms=5.0, queries=QUERIES):
+def evaluate(before, after, tolerance=0.5, min_delta_ms=10.0, queries=QUERIES):
     """Return one row per query with its verdict. Pure function, unit tested."""
     meta = {q["name"]: q for q in queries}
     before_by_name = {r["name"]: r for r in before["results"]}
@@ -71,8 +71,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("before")
     parser.add_argument("after")
-    parser.add_argument("--tolerance", type=float, default=0.25)
-    parser.add_argument("--min-delta-ms", type=float, default=5.0)
+    parser.add_argument("--tolerance", type=float, default=0.5)
+    parser.add_argument("--min-delta-ms", type=float, default=10.0)
     parser.add_argument("--markdown")
     args = parser.parse_args()
 

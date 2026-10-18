@@ -22,7 +22,7 @@ def test_faster_is_ok():
 
 
 def test_small_absolute_noise_is_ignored():
-    # 1 ms -> 3 ms is 3x slower but only 2 ms, below the 5 ms noise floor.
+    # 1 ms -> 3 ms is 3x slower but only 2 ms, below the 10 ms noise floor.
     assert verdicts(bench("b", critical_q=1, watch_q=1), bench("a", critical_q=3, watch_q=3))["critical_q"] == "ok"
 
 
