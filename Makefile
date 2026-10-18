@@ -1,7 +1,7 @@
 PY ?= python3
 REPORTS := reports
 
-.PHONY: up down reset migrate-previous seed migrate
+.PHONY: up down reset migrate-previous seed bench-baseline migrate bench-release
 
 up:
 	docker compose up -d --wait
@@ -18,7 +18,13 @@ migrate-previous:
 seed:
 	$(PY) scripts/seed.py
 
+bench-baseline:
+	$(PY) scripts/benchmark.py --label baseline --out $(REPORTS)/baseline.json
+
 migrate:
 	scripts/flyway.sh migrate
 	scripts/flyway.sh validate
 	scripts/flyway.sh info
+
+bench-release:
+	$(PY) scripts/benchmark.py --label release --out $(REPORTS)/release.json
