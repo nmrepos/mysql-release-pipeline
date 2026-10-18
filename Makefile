@@ -1,7 +1,16 @@
 PY ?= python3
 REPORTS := reports
 
-.PHONY: up down reset check migrate-previous seed bench-baseline migrate bench-release gate concurrency deadlock-demo validate release
+.PHONY: help up down reset check migrate-previous seed bench-baseline migrate bench-release gate \
+        concurrency deadlock-demo validate release drill
+
+help:
+	@echo "make up            start local MySQL (docker compose)"
+	@echo "make release       full pipeline: previous release -> seed -> benchmark -> migrate -> gate -> concurrency -> validate"
+	@echo "make drill         break-it drill: ship a release that drops an index and watch the gate catch it"
+	@echo "make deadlock-demo run the concurrency test with the old lock order to reproduce deadlocks"
+	@echo "make check         migration naming/history guard + unit tests (no database needed)"
+	@echo "make reset         wipe the local database"
 
 up:
 	docker compose up -d --wait
@@ -46,3 +55,6 @@ validate:
 	$(PY) scripts/validate.py
 
 release: check migrate-previous seed bench-baseline migrate bench-release gate concurrency validate
+
+drill:
+	scripts/drill.sh

@@ -100,6 +100,9 @@ jobs:
       - name: Environment readiness checks
         run: make validate
 
+      - name: Break-it drill (the gate must catch a dropped index)
+        run: make drill
+
       - name: Job summary
         if: always()
         run: |
